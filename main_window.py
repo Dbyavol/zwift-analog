@@ -70,37 +70,64 @@ class TrainingWindow(QDialog):
         layout.addLayout(checkbox_layout)
 
         # График
-        self.graph_widget = pg.PlotWidget(self)
-        layout.addWidget(self.graph_widget)
+        # self.graph_widget = pg.PlotWidget(self)
+        # layout.addWidget(self.graph_widget)
 
         self.setLayout(layout)
 
-        # Минималистичная настройка графика
-        self.graph_widget.setBackground(None)  # Прозрачный фон
-        self.graph_widget.showGrid(False, False)
-        self.graph_widget.getAxis('left').setVisible(False)
-        self.graph_widget.getAxis('bottom').setVisible(False)
-
-        # Линии графика
-        self.power_plot = self.graph_widget.plot(pen=pg.mkPen('b', width=2))
-        self.heart_rate_plot = self.graph_widget.plot(pen=pg.mkPen('r', width=2))
-        self.cadence_plot = self.graph_widget.plot(pen=pg.mkPen('g', width=2))
-
-        self.x_data = []
         self.power_data = []
-        self.cadence_data = []
         self.heart_rate_data = []
-
+        self.cadence_data = []  # даже если пока не используешь
         self.time_counter = 0
+        self.heart_time_counter = 0
+        self.power_time_counter = 0
+        
+
+        # ======= ДОБАВЛЯЕМ В НАЧАЛЕ __init__ =======
+        self.real_time_label = QLabel("", self)
+        self.real_time_label.setFont(QFont("Arial", 12))
+        self.real_time_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.real_time_label)
+
+        # Таймер для отображения времени
+        self.clock_timer = QTimer()
+        self.clock_timer.timeout.connect(self.update_real_time)
+        self.clock_timer.start(1000)
+
+        # ======= ДВА ГРАФИКА ВМЕСТО ОДНОГО =======
+        self.power_graph_widget = pg.PlotWidget(self)
+        self.power_graph_widget.setBackground(None)
+        self.power_graph_widget.showGrid(True, True)
+        self.power_graph_widget.setTitle("Мощность (Вт)", color='w', size='12pt')
+        self.power_graph_widget.getAxis('left').setPen('w')
+        self.power_graph_widget.getAxis('bottom').setPen('w')
+        layout.addWidget(self.power_graph_widget)
+
+        self.heart_graph_widget = pg.PlotWidget(self)
+        self.heart_graph_widget.setBackground(None)
+        self.heart_graph_widget.showGrid(True, True)
+        self.heart_graph_widget.setTitle("Пульс (уд/мин)", color='w', size='12pt')
+        self.heart_graph_widget.getAxis('left').setPen('w')
+        self.heart_graph_widget.getAxis('bottom').setPen('w')
+        layout.addWidget(self.heart_graph_widget)
+
+        self.power_plot = self.power_graph_widget.plot(pen=pg.mkPen('b', width=2))
+        self.heart_rate_plot = self.heart_graph_widget.plot(pen=pg.mkPen('r', width=2))
+
+        self.power_time = []
+        self.heart_time = []
+
+        # Минималистичная настройка графика
+        self.power_graph_widget.setBackground(None)  # Прозрачный фон
+        self.power_graph_widget.showGrid(False, False)
+
+        # Минималистичная настройка графика
+        self.heart_graph_widget.setBackground(None)  # Прозрачный фон
+        self.heart_graph_widget.showGrid(False, False)
 
         # Флаги получения данных
         self.received_power = False
         self.received_heart_rate = False
-
-        # Таймер обновления графика
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_graph)
-        self.timer.start(1000)  # Обновление каждую секунду
 
         if trainer_thread:
             self.trainer_thread = trainer_thread
@@ -136,43 +163,49 @@ class TrainingWindow(QDialog):
         self.power_data.append(power)
 
         self.received_power = True
+        self.update_graph()
 
     def update_heart_rate(self, value):
         self.heart_rate_label.setText(f"Пульс (уд/мин): {value}")
         self.heart_rate_data.append(value)
         
         self.received_heart_rate = True
+        self.update_graph()
         
     def update_graph(self):
-        """Обновление графика."""
-        self.x_data.append(self.time_counter)
+        # Обновление счетчиков
+        if self.received_power:
+            self.power_time.append(self.power_time_counter)
+            self.power_time_counter += 1
+        if self.received_heart_rate:
+            self.heart_time.append(self.heart_time_counter)
+            self.heart_time_counter += 1
+
         self.time_counter += 1
 
-        # Если данных не было - добавляем пустые значения
+        # Если данных не пришло — дополняем 0
         if not self.received_power:
             self.power_data.append(0)
-            self.cadence_data.append(0)
+            self.power_time.append(self.power_time_counter)
         if not self.received_heart_rate:
             self.heart_rate_data.append(0)
+            self.heart_time.append(self.heart_time_counter)
 
         # Сбрасываем флаги
         self.received_power = False
         self.received_heart_rate = False
 
+        # Обновляем каждый график отдельно
         if self.show_power_checkbox.isChecked():
-            self.power_plot.setData(self.x_data, self.power_data)
+            self.power_plot.setData(self.power_time, self.power_data)
         else:
             self.power_plot.clear()
-        '''
-        if self.show_cadence_checkbox.isChecked():
-            self.cadence_plot.setData(self.x_data, self.cadence_data)
-        else:
-            self.cadence_plot.clear()
-        '''
+
         if self.show_heart_rate_checkbox.isChecked():
-            self.heart_rate_plot.setData(self.x_data, self.heart_rate_data)
+            self.heart_rate_plot.setData(self.heart_time, self.heart_rate_data)
         else:
             self.heart_rate_plot.clear()
+
     
     def closeEvent(self, event):
         """Сохранение данных при закрытии."""
@@ -197,4 +230,9 @@ class TrainingWindow(QDialog):
 
     def mouseReleaseEvent(self, event):
         self.dragging = False
+    
+    def update_real_time(self):
+        current_time = QDateTime.currentDateTime().toString("HH:mm:ss")
+        self.real_time_label.setText(f"Текущее время: {current_time}")
+
 
